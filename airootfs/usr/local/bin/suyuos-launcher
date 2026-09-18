@@ -20,7 +20,7 @@ mkdir -p "$CONFIG_DIR"
 create_default_config() {
     cat > "$LAUNCHER_CONFIG" << 'EOF'
 # suyuOS Launcher Configuration
-DEFAULT_EMULATOR=suyu
+DEFAULT_EMULATOR=eden
 ENABLE_GAMEMODE=true
 ENABLE_MANGOHUD=false
 FULLSCREEN_DEFAULT=true
@@ -46,7 +46,7 @@ detect_emulator() {
     
     case "${extension,,}" in
         nsp|xci|nca|nro|nso)
-            if [ -x "$EDEN_BIN" ] && [ "$DEFAULT_EMULATOR" = "eden" ]; then
+            if [ -x "$EDEN_BIN" ] && { [ "$DEFAULT_EMULATOR" = "eden" ] || [ ! -x "$SUYU_BIN" ]; }; then
                 echo "$EDEN_BIN"
             elif [ -x "$SUYU_BIN" ]; then
                 echo "$SUYU_BIN"

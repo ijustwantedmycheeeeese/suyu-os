@@ -8,7 +8,6 @@ bcachefs-tools
 bind
 bolt
 brltty
-broadcom-wl
 btrfs-progs
 clonezilla
 cloud-init
@@ -272,3 +271,14 @@ fuse2
 fuse3
 ntfs-3g
 exfat-utils
+
+# Eden emulator runtime dependencies (Eden is compiled in CI and installed to /usr/local)
+qt6-base
+qt6-multimedia
+qt6-charts
+qt6-wayland
+sdl3
+enet
+libusb
+vulkan-utility-libraries
+spirv-tools

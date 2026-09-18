@@ -23,6 +23,7 @@ file_permissions=(
   ["/usr/local/bin/Installation_guide"]="0:0:755"
   ["/usr/local/bin/livecd-sound"]="0:0:755"
   ["/usr/local/bin/build-emulators"]="0:0:755"
+  ["/usr/local/bin/suyu"]="0:0:755"
   ["/usr/local/bin/suyuos-launcher"]="0:0:755"
   ["/usr/local/bin/suyuos-optimize"]="0:0:755"
   ["/usr/local/bin/suyuos-restore"]="0:0:755"

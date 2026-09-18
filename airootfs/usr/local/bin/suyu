@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# suyuOS compatibility shim: upstream suyu is no longer available, so the
+# "suyu" command runs Eden (same Yuzu lineage, same CLI) built into this image.
+exec /usr/local/bin/eden "$@"

@@ -24,10 +24,11 @@ env:
 jobs:
   build-iso:
     runs-on: ubuntu-latest
-    # Use an Arch Linux container for the job. Note: --privileged is not supported on GitHub-hosted containers,
-    # so we avoid that option here.
+    # Use an Arch Linux container for the job. It runs privileged because mkarchiso mounts /proc and /dev
+    # inside its chroot (without this, the build fails with "mount: ...: permission denied").
     container:
       image: archlinux:latest
+      options: --privileged
 
     steps:
     - name: Prepare helper script (disk & cleanup functions)
@@ -149,98 +150,47 @@ jobs:
 
         show_disk_usage
 
-    - name: Prepare emulator sources (lightweight)
+    - name: Build Eden emulator into the image
+      env:
+        # Pinned so the ISO is reproducible; bump deliberately.
+        EDEN_REF: 0ce29be60874b24890ab9239cecf1bd67b924428
       run: |
+        set -euo pipefail
         source /tmp/ci_helpers.sh
 
-        mkdir -p /tmp/emulator-sources
-        cd /tmp/emulator-sources
+        pacman -S --noconfirm --needed \
+          base-devel boost catch2 cmake enet ffmpeg fmt git glslang libzip lz4 \
+          ninja nlohmann-json openssl opus python qt6-base qt6-multimedia \
+          qt6-charts qt6-tools sdl3 zlib zstd zip unzip vulkan-headers \
+          vulkan-utility-libraries libusb spirv-tools spirv-headers
 
-        echo "Creating suyu source reference..."
-        mkdir -p suyu
-        echo "https://git.suyu.dev/suyu/suyu.git" > suyu/source_url.txt
-        echo "https://github.com/suyu-emu/suyu.git" > suyu/fallback_url.txt
+        git init -q /tmp/eden-src
+        cd /tmp/eden-src
+        git remote add origin https://git.eden-emu.dev/eden-emu/eden.git
+        git fetch --depth 1 origin "$EDEN_REF"
+        git checkout -q FETCH_HEAD
+        git log --oneline -1
 
-        echo "Creating eden source reference..."
-        mkdir -p eden
-        echo "https://git.eden-emu.dev/eden-emu/eden.git" > eden/source_url.txt
+        cmake -S . -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DENABLE_WERROR=OFF \
+          -DYUZU_TESTS=OFF \
+          -DENABLE_QT=ON \
+          -DENABLE_WEB_SERVICE=OFF \
+          -DENABLE_UPDATE_CHECKER=OFF
+        cmake --build build -j"$(nproc)"
 
-        echo "Creating horinux source reference..."
-        mkdir -p horinux
-        echo "https://github.com/suyu-emu/horinux.git" > horinux/source_url.txt
+        # Install straight into the archiso airootfs so it ships in the ISO
+        DESTDIR="$GITHUB_WORKSPACE/airootfs" cmake --install build --prefix /usr/local
+        cd "$GITHUB_WORKSPACE"
+        test -x airootfs/usr/local/bin/eden
+        strip --strip-unneeded airootfs/usr/local/bin/eden || true
+        ls -lh airootfs/usr/local/bin/
+        ldd airootfs/usr/local/bin/eden | grep "not found" || echo "all shared libraries resolved"
 
-        echo "Creating holoiso source reference..."
-        mkdir -p holoiso
-        echo "https://github.com/holoiso-eol/holoiso.git" > holoiso/source_url.txt
-
-        if [ "${BUILD_TYPE}" = "debug" ] || [ "${BUILD_TYPE}" = "testing" ]; then
-          echo "Cloning minimal horinux for testing build..."
-          git clone --depth 1 --single-branch https://github.com/suyu-emu/horinux.git horinux-actual || \
-            echo "Failed to clone horinux (non-critical for testing)"
-        fi
-
-        echo "Emulator source preparation complete:"
-        ls -la /tmp/emulator-sources/ || true
-        du -sh /tmp/emulator-sources/ || true
-        show_disk_usage
-
-    - name: Prepare emulator build scripts (no pre-building)
-      run: |
-        source /tmp/ci_helpers.sh
-        cd /tmp/emulator-sources || mkdir -p /tmp/emulator-sources && cd /tmp/emulator-sources
-
-        cat > build_suyu.sh <<'EOF'
-        #!/usr/bin/env bash
-        set -euo pipefail
-        SUYU_URL="https://git.suyu.dev/suyu/suyu.git"
-        SUYU_FALLBACK="https://github.com/suyu-emu/suyu.git"
-
-        echo "Building suyu emulator..."
-        cd /tmp
-        git clone --recursive --depth 1 "$SUYU_URL" suyu-build || git clone --recursive --depth 1 "$SUYU_FALLBACK" suyu-build || {
-          echo "Failed to clone suyu repository"
-          exit 1
-        }
-
-        cd suyu-build
-        mkdir -p build && cd build
-
-        cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DENABLE_QT_TRANSLATION=ON -DENABLE_SDL2=ON -DENABLE_VULKAN=ON -DYUZU_USE_BUNDLED_VCPKG=OFF -DYUZU_USE_BUNDLED_FFMPEG=OFF -DYUZU_ENABLE_LTO=ON -DYUZU_CRASH_DUMPS=OFF -DYUZU_USE_PRECOMPILED_HEADERS=OFF
-
-        ninja -j$(nproc)
-        ninja install
-        cd /tmp
-        rm -rf suyu-build
-        echo "Suyu build completed and installed"
-        EOF
-
-        cat > build_eden.sh <<'EOF'
-        #!/usr/bin/env bash
-        set -euo pipefail
-        EDEN_URL="https://git.eden-emu.dev/eden-emu/eden.git"
-
-        echo "Building eden emulator..."
-        cd /tmp
-        git clone --recursive --depth 1 "$EDEN_URL" eden-build || {
-          echo "Failed to clone eden repository"
-          exit 1
-        }
-
-        cd eden-build
-        mkdir -p build && cd build
-
-        cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DENABLE_QT_TRANSLATION=ON -DENABLE_SDL2=ON -DENABLE_VULKAN=ON
-
-        ninja -j$(nproc)
-        ninja install
-        cd /tmp
-        rm -rf eden-build
-        echo "Eden build completed and installed"
-        EOF
-
-        chmod +x build_suyu.sh build_eden.sh
-        echo "Build scripts created successfully:"
-        ls -la *.sh || true
+        rm -rf /tmp/eden-src
+        cleanup_pacman_cache
+        cleanup_temp_files
         show_disk_usage
 
     - name: Prepare ISO build environment
